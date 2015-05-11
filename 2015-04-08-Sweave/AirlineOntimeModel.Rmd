@@ -1,0 +1,162 @@
+---
+title: "Airline Ontime Model"
+author: "Mark R. Locatelli"
+date: "Wednesday, April 08, 2015"
+output: word_document
+toc: true
+theme: united
+fig_caption: true
+---
+
+Introduction
+--------------------------------------
+
+In this post, we'll use logistic regression to predict delayed flights. This analysis is conducted using a public data set that can be obtained here:
+
+- <https://catalog.data.gov/dataset/airline-on-time-performance-and-causes-of-flight-delays>
+- <http://stat-computing.org/dataexpo/2009/the-data.html>
+
+Other websites of interest:
+
+- <http://users.stat.umn.edu/~geyer/Sweave/>
+- <http://www.datasciencecentral.com/profiles/blogs/predicting-flights-delay-using-supervised-learning>
+
+Note: This is a common data set in the machine learning community to test out algorithms and models given it's publicly available and have sizable data. 
+
+In this report, we will look at small sample snapsot(flights in and out of HI December 2014).
+
+Let's look at a summary of the data:
+
+```{r}
+summary(AirlineDataSummary)
+```
+
+Data available includes the following elements:
+
+- Departure time
+- Arrival time
+- Carrier
+- Destination
+- Origin
+- Distance
+- Day of the Week
+
+The goal here is to identify flights that are likely to be delayed. In the machine learning literature this is called a binary classification using supervised learning. We are bucketing flights into delayed or ontime(hence binary classification). (Note: Prediction and classification are two main big goals of data mining and data science. On a deeper philosophical level, they are two sides of the same coin. To classify things is predicting as well if you think about it.)
+
+Logistic regression provides us with a probability of belonging to one or the two cases (delayed or ontime). Since probability ranges from 0 to 1, we will use the 0.5 cutoff to determine which bucket to put our probability estimates in. If the probability estimate from the logistic regression is equal to or greater tha 0.5 then we assign it to be ontime else it's delayed. We'll explain the theory behind logistic regression in another meeting.
+
+But before we start our modeling exercise, it's good to take a visual look at what we are trying to predict to see what it looks like. Since we are trying to predict delayed flights with historical data, let's do a simple histogram plot to see the distribution of flights delayed vs. ontime.
+
+```{r}
+hist(AirlineData$DEP_DEL15, breaks = c(0,0.5,1), xlab="Ontime vs. Delay", 
+     main="Ontime (0) vs. Delayed Flights (1)", col=c("lightgreen","red"), 
+     xlim=c(0,1), ylim=c(0, 10000))
+```
+
+We see that most flights are ontime (`r round(100 - PercentDelay, 2)`%).  We need to have some delayed flights in our dataset in order to train the machine to learn from this delayed subset to predict if future flights will be delayed.
+
+Exploratory Data Analysis (EDA)
+--------------------------------------
+
+The next step in predictive analytics is to explore our underlying data. Let's look at a few tables of our explantory variables to see how they look against Delayed Flights.
+
+
+
+```{r}
+kable(CarrierTable, caption = "Carrier Distribution in the Data Set", label = "tab:one")
+```
+
+
+
+```{r, echo=FALSE}
+kable(DayTable, caption = "Day of the Week in the Data Set", label = "tab:two")
+```
+
+
+
+```{r, echo=FALSE}
+kable(DestTable, caption = "Flight Destinations in the Data Set", label = "tab:three")
+```
+
+
+
+```{r, echo=FALSE}
+kable(OriginTable, caption = "Flight Origins in the Data Set", label = "tab:four")
+```
+
+
+
+Data Transformations And Pre-Processing
+------------------------------------------
+
+One of the main steps in predictive analytics is data transformation. Data is never in the format you want. Transformations of the data are requirede to get it the way we need them (either because the data is dirty, not of the type we want, out of bounds, and a host of other reasons).
+
+This first transformation we'll need to do is to convert the categorical variables into dummy variables.
+
+The categorical variables of interests are: 
+
+1) Destination (state) 
+2) Origin (state) 
+3) Day of the Week
+
+For simplicity of model building, we'll NOT use Day of the Month, because of the combinatorial explosion in number of dummy variables. The reader is free to do this as an exercise on his/her own. :)
+
+This is done usinge code like:
+```
+M <- cbind(AirlineData, rep(0, nrow(AirlineData)))
+names(M)[ncol(M)] <- "origin.AK"
+M$origin.AK[M$ORIGIN_STATE_NM == "Alaska"] <- 1
+```
+
+Logistic Regression
+------------------------------
+
+The commands for running the logistic regressions look like:
+```
+day.model <- glm(formula = M$DEP_DEL15 ~ 1 +  M$day.2 + M$day.3 + M$day.4 + M$day.5 + M$day.6 + M$day.7, family = binomial)
+```
+
+Three seperate regressions were run for each of the three categorical vairables.
+
+```{r}
+summary(day.model)
+```
+
+```{r}
+summary(dest.model)
+```
+
+```{r}
+summary(origin.model)
+```
+
+Based on this, a selection of significant variables were selected to craft a final version of this model.
+
+```{r}
+summary(sigvar.model)
+```
+
+Conclusions
+-------------------------
+
+In this example, we've looked at a publicly available data source, run some simple analyses, and used the `RMarkdown` tools in `RStudio` to create a report of the results we've generated.  Looking at data for flying in and out of Hawaii in December: flights on Tuesdays are more likely to be delayed ($Coef = `r round(sigvar.model$coef[2], 4)`$), and flights on Sundays are more likely to be on time ($Coef = `r round(sigvar.model$coef[4], 4)`$); flights to the outlying territories (Guam, American Samoa, etc.) are most likely to be delayed ($Coef = `r round(sigvar.model$coef[9], 4)`$); as are flights from Virginia (`r round(sigvar.model$coef[17], 4)`).
+
+```{r}
+ kable(AggData, caption = "Flights by Probability of Delay", label = "tab:five")
+```
+
+```{r}
+kable(AggData.means, caption = "Actual Delays vs Predicted Delays", label = "tab:six")
+```
+
+```{r}
+plot(AggData.means, xlim=range, ylim=range, type = "p", col = "red", xlab="Predicted Prob. of Delay", 
+     main="Actual vs. Model")
+```
+
+```{r xtable, results="asis"}
+library(xtable)
+Aggmeanstab <- xtable(AggData.means, caption = "Actual Delays vs Predicted Delays", label = "tab:six")
+print(Aggmeanstab, type="html")
+```
+

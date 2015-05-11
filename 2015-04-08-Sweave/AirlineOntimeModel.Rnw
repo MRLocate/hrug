@@ -1,0 +1,180 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{amscd}
+\usepackage[tableposition=top]{caption}
+\usepackage{ifthen}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+
+% never indent paragraphs
+\newlength\tindent
+\setlength{\tindent}{\parindent}
+\setlength{\parindent}{0pt}
+\renewcommand{\indent}{\hspace*{\tindent}}
+
+\begin{document}
+
+\title{Airline Ontime Model Report}
+\author{Mark R. Locatelli}
+\maketitle
+
+% If you wanted to run seperated files to generate document:
+%   \SweaveInput{chapter1.Rnw}
+%   \SweaveInput{chapter2.Rnw}
+% 	\SweaveInput{chapter3.Rnw}
+% 	\SweaveInput{chapter4.Rnw}
+% 	\SweaveInput{chapter5.Rnw}
+% 	\SweaveInput{chapter6.Rnw}
+% 	\SweaveInput{chapter7.Rnw}
+% 	\SweaveInput{chapter8.Rnw}
+
+\section{Introduction}
+
+In this post, we'll use logistic regression to predict delayed flights. This analysis is conducted using a public data set that can be obtained here:
+\begin{itemize}
+\item \url{https://catalog.data.gov/dataset/airline-on-time-performance-and-causes-of-flight-delays}
+\item \url{http://stat-computing.org/dataexpo/2009/the-data.html}
+\end{itemize}
+
+
+Other websites of interest:
+\begin{itemize}
+\item \url{http://users.stat.umn.edu/~geyer/Sweave/}
+\item \url{http://www.datasciencecentral.com/profiles/blogs/predicting-flights-delay-using-supervised-learning}
+\end{itemize}
+
+Note: This is a common data set in the machine learning community to test out algorithms and models given it's publicly available and have sizable data.\\~\\ 
+
+In this report, we will look at small sample snapsot(flights in and out of HI December 2014). \\~\\
+
+Let's look at a summary of the data:\\~\\
+<<datasummary>>=
+summary(AirlineDataSummary)
+@
+
+Data available includes the following elements:
+\begin{itemize}
+\item Departure Time
+\item Carrier
+\item Destination
+\item Distance
+\item Flight Number
+\item Day of the Week
+\item Day of the Month
+\item Tail Number
+\item Flight Status
+\end{itemize}
+
+The goal here is to identify flights that are likely to be delayed. In the machine learning literature this is called a binary classification using supervised learning. We are bucketing flights into delayed or ontime(hence binary classification). (Note: Prediction and classification are two main big goals of data mining and data science. On a deeper philosophical level, they are two sides of the same coin. To classify things is predicting as well if you think about it.)\\~\\
+
+Logistic regression provides us with a probability of belonging to one or the two cases (delayed or ontime). Since probability ranges from 0 to 1, we will use the 0.5 cutoff to determine which bucket to put our probability estimates in. If the probability estimate from the logistic regression is equal to or greater tha 0.5 then we assign it to be ontime else it's delayed. We'll explain the theory behind logistic regression in another meeting.\\~\\
+
+But before we start our modeling exercise, it's good to take a visual look at what we are trying to predict to see what it looks like. Since we are trying to predict delayed flights with historical data, let's do a simple histogram plot to see the distribution of flights delayed vs. ontime (See Figure 1).\\~\\
+
+\begin{figure}
+\begin{center}
+<<label=fig1,fig=TRUE,echo=FALSE>>=
+hist(AirlineData$DEP_DEL15, breaks = c(0,0.5,1), xlab="Ontime vs. Delay", 
+     main="Ontime (0) vs. Delayed Flights (1)", col=c("lightgreen","red"), 
+     xlim=c(0,1), ylim=c(0, 10000))
+@
+  \end{center}
+\caption{Simple histogram of delays vs. ontime flights}
+\label{fig:one}
+\end{figure}
+
+We see that most flights are ontime (\Sexpr{round(100 - PercentDelay, 2)}\%, as expected). But we need to have delayed flights in our dataset in order to train the machine to learn from this delayed subset to predict if future flights will be delayed.\\~\\
+
+\section{Exploratory Data Analysis (EDA)}
+
+The next step in predictive analytics is to explore our underlying data. Let's look at a few tables of our explantory variables to see how they look against Delayed Flights.\\~\\
+
+<<label=tab1,echo=FALSE,results=tex>>=
+  library(xtable)
+print(xtable(CarrierTable, caption = "Carriers Distribution in the Data Set", label = "tab:one"), table.placement = "tbp",caption.placement = "top")
+@
+
+<<label=tab2,echo=FALSE,results=tex>>=
+  library(xtable)
+print(xtable(DayTable, caption = "Day of the Week in the Data Set", label = "tab:two"), table.placement = "tbp",caption.placement = "top")
+@
+
+<<label=tab3,echo=FALSE,results=tex>>=
+  library(xtable)
+print(xtable(DestTable, caption = "Flight Destinations in the Data Set", label = "tab:three"), table.placement = "tbp",caption.placement = "top")
+@
+
+<<label=tab4,echo=FALSE,results=tex>>=
+  library(xtable)
+print(xtable(OriginTable, caption = "Flight Origins in the Data Set", label = "tab:four"), table.placement = "tbp",caption.placement = "top")
+@
+
+\section{Data Transformations And Pre-Processing}
+
+One of the main steps in predictive analytics is data transformation. Data is never in the format you want. Transformations of the data are requirede to get it the way we need them (either because the data is dirty, not of the type we want, out of bounds, and a host of other reasons). \\~\\
+
+This first transformation we'll need to do is to convert the categorical variables into dummy variables.\\~\\
+
+The categorical variables of interests are: 1) Destination (state) 2) Origin (state) 3) Day of the Week. For simplicity of model building, we'll NOT use Day of the Month, because of the combinatorial explosion in number of dummy variables. The reader is free to do this as an exercise on his/her own. :) \\~\\
+
+This is done usinge code like:
+\begin{tabbing}
+\verb@M <- cbind(AirlineData, rep(0, nrow(AirlineData)))@ \\
+\verb@names(M)[ncol(M)] <- "origin.AK"@ \\
+\verb@M$origin.AK[M$ORIGIN_STATE_NM == "Alaska"] <- 1@\\
+\end{tabbing}
+
+\section{Logistic Regression}
+
+The commands for running the logistic regressions look like:
+\begin{tabbing}
+\verb@day.model <- glm(formula = M$DEP_DEL15 ~ 1 +  M$day.2 + M$day.3 + M$day.4 + M$day.5 + M$day.6 + M$day.7, family = binomial)@\\
+\end{tabbing}
+
+Three seperate regressions were run for each of the three categorical vairables.
+
+<<daymodelsummary>>=
+summary(day.model)
+@
+
+<<destmodelsummary>>=
+summary(dest.model)
+@
+
+<<originmodelsummary>>=
+summary(origin.model)
+@
+
+Based on this, a selection of significant variables were selected to craft a final version of this model.
+
+<<sigvarmodelsummary>>=
+summary(sigvar.model)
+@
+
+\section{Conclusions}
+
+In this example, we've looked at a publicly available data source, run some simple analyses, and used the \verb@Sweave@ tools in R to create a report of the results we've generated.  Looking at data flying in and out of Hawaii in December: flights on Tuesdays are more likely to be delayed ($Coef = \Sexpr{round(sigvar.model$coef[2], 4)}$), and flights on Sundays are more likely to be on time ($Coef = \Sexpr{round(sigvar.model$coef[4], 4)}$); flights to the outlying territories (Guam, American Samoa, etc.) are most likely to be delayed ($Coef = \Sexpr{round(sigvar.model$coef[9], 4)}$); as are flights from Virginia (\Sexpr{round(sigvar.model$coef[17], 4)}).
+
+<<label=tab5,echo=FALSE,results=tex>>=
+  library(xtable)
+print(xtable(AggData, caption = "Flights by Probability of Delay", label = "tab:five"), table.placement = "tbp",caption.placement = "top")
+@
+
+<<label=tab6,echo=FALSE,results=tex>>=
+  library(xtable)
+print(xtable(AggData.means, caption = "Actual Delays vs Predicted Delays", label = "tab:six"), table.placement = "tbp",caption.placement = "top")
+@
+
+\begin{figure}
+\begin{center}
+<<label=fig2,fig=TRUE,echo=FALSE>>=
+plot(AggData.means, xlim=range, ylim=range, type = "p", col = "red", xlab="Predicted Prob. of Delay", 
+     main="Actual vs. Model")
+@
+  \end{center}
+\caption{Model's predicted probability of delay vs. actual percentage delayed.}
+\label{fig:two}
+\end{figure}
+
+\end{document}
